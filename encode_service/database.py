@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File
 import faiss
 import torch
+import os
 import numpy as np
 from PIL import Image
 from pathlib import Path
@@ -10,7 +10,13 @@ from torch.utils.data import DataLoader, Dataset
 from typing import List
 import glob
 from typing import Union, List
-app = FastAPI()
+import dotenv
+dotenv.load_dotenv()
+
+model_name = os.getenv("MODEL_NAME")
+data_path = os.getenv("DATA_PATH")
+index_path = os.getenv("INDEX_PATH")
+image_paths = os.getenv("IMAGES_PATH")
 
 class ImageDataset(Dataset):
     def __init__(self, image_paths, preprocess):
@@ -28,7 +34,7 @@ class ImageDataset(Dataset):
 
 def get_data_paths(dir: Union[str, List[str]], data_formats: List[str], prefix: str = '') -> List[str]:
     try:
-        f = []  # data files
+        f = [] 
         for d in dir if isinstance(dir, list) else [dir]:
             p = Path(d)
             if p.is_dir():
@@ -40,12 +46,11 @@ def get_data_paths(dir: Union[str, List[str]], data_formats: List[str], prefix: 
     except Exception as e:
         raise Exception(f'{prefix}Error loading data from {dir}: {e}') from e
 
-@app.post("/build-index/")
-async def build_index(data_dir: str, model_name: str = "ViT-B/32", batch_size: int = 4, device: str = "cpu"):
+def build_index(data_dir: str, model_name: str = model_name, batch_size: int = 4, device: str = "cpu"):
     model, preprocess = clip.load(model_name, device=device)
     
-    image_paths = get_data_paths(data_dir, data_formats=["jpg", "jpeg", "png"])
-    dataset = ImageDataset(image_paths, preprocess)
+    img_path_list = get_data_paths(data_dir, data_formats=["jpg", "jpeg", "png"])
+    dataset = ImageDataset(img_path_list, preprocess)
     dataloader = DataLoader(dataset, batch_size=batch_size, num_workers=4)
     
     image_embeddings = []
@@ -62,12 +67,12 @@ async def build_index(data_dir: str, model_name: str = "ViT-B/32", batch_size: i
     index = faiss.IndexFlatL2(d)
     index.add(image_embeddings)
     
-    faiss.write_index(index, "/data/index.faiss")
-    with open("data/image_paths.json", "w") as f:
-        json.dump(image_paths, f, indent=4)
+    faiss.write_index(index, index_path)
+    with open(image_paths, "w") as f:
+        json.dump(img_path_list, f, indent=4)
 
     return {"status": "index built successfully"}
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print(build_index(data_path, model_name))
+    # print(model_name, data_path, index_path, image_paths, sep='\n')

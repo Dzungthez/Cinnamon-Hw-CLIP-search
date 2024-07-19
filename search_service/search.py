@@ -1,5 +1,5 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 import faiss
 import torch
 import clip
@@ -9,9 +9,16 @@ import json
 from typing import List
 import matplotlib.pyplot as plt
 import io
-import base64
 import os
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+import dotenv
+import tempfile
+
+dotenv.load_dotenv()
+
+model_name = os.getenv("MODEL_NAME")
+index_path = os.getenv("INDEX_PATH")
+image_paths = os.getenv("IMAGES_PATH")
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 app = FastAPI()
 
 def load_faiss_index(index_path, image_paths_path):
@@ -20,57 +27,49 @@ def load_faiss_index(index_path, image_paths_path):
         image_paths = json.load(f)
     return index, image_paths
 
-def get_similar_images(images, index, image_paths, top_k=5, model_name="ViT-B/32", device="cpu"):
+def get_similar_images(images, index, image_paths, top_k=5, model_name=model_name, device="cpu"):
     clip_model, clip_preprocess = clip.load(model_name, device=device)
-    
+
     processed_images = torch.stack([clip_preprocess(img) for img in images]).to(device)
-    
+
     with torch.no_grad():
         embeddings = clip_model.encode_image(processed_images)
         embeddings /= embeddings.norm(dim=-1, keepdim=True)
         embeddings = embeddings.cpu().numpy()
-    
+
     D, I = index.search(embeddings, top_k)
-    
+
     similar_images = [[image_paths[i] for i in indices] for indices in I]
     return similar_images
 
-def display_images(query_images, similar_images):
-    num_queries = len(query_images)
-    num_similar = len(similar_images[0])
-    
-    if num_queries == 1:
-        fig, axs = plt.subplots(1, num_similar + 1, figsize=(10, 5))
-        axs = [axs]  # Make it iterable
-    else:
-        fig, axs = plt.subplots(num_queries, num_similar + 1, figsize=(15, 5 * num_queries))
-    
-    for i, query_image in enumerate(query_images):
-        axs[i][0].imshow(query_image)
-        axs[i][0].set_title("Query Image")
-        axs[i][0].axis("off")
-        
-        for j, sim_image in enumerate(similar_images[i]):
-            axs[i][j + 1].imshow(Image.open(sim_image))
-            axs[i][j + 1].set_title(f"Similar Image {j + 1}")
-            axs[i][j + 1].axis("off")
-    
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(fig)
-    buf.seek(0)
-    img_str = base64.b64encode(buf.read()).decode('utf-8')
-    return img_str
+def combine_images(query_image, similar_images):
+    images = [query_image] + [Image.open(img_path) for img_path in similar_images]
+    widths, heights = zip(*(img.size for img in images))
+    total_width = sum(widths)
+    max_height = max(heights)
 
-index, image_paths = load_faiss_index("../data/index.faiss", "../data/image_paths.json")
+    combined_image = Image.new('RGB', (total_width, max_height))
+    x_offset = 0
+    for img in images:
+        combined_image.paste(img, (x_offset, 0))
+        x_offset += img.width
 
-@app.post("/search/", response_class=HTMLResponse)
+    return combined_image
+
+index, image_paths = load_faiss_index(index_path, image_paths)
+
+@app.post("/search/", response_class=FileResponse)
 async def search(file: UploadFile = File(...), top_k: int = 5):
     image = Image.open(file.file).convert("RGB")
-    similar_images = get_similar_images([image], index, image_paths, top_k=top_k, device = 'cuda')
-    img_str = display_images([image], similar_images)
-    html_content = f'<img src="data:image/png;base64,{img_str}" alt="Result Image"/>'
-    return HTMLResponse(content=html_content)
+    similar_images = get_similar_images([image], index, image_paths, top_k=top_k, device='cuda')
+    combined_image = combine_images(image, similar_images[0])
+
+    # Save the combined image to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp_file:
+        combined_image.save(tmp_file, format='PNG')
+        tmp_file_path = tmp_file.name
+
+    return FileResponse(tmp_file_path, media_type="image/png", filename="result.png")
 
 if __name__ == "__main__":
     import uvicorn
