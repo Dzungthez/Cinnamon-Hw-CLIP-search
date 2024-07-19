@@ -30,17 +30,19 @@ def load_faiss_index(index_path, image_paths_path):
 def get_similar_images(images, index, image_paths, top_k=5, model_name=model_name, device="cpu"):
     clip_model, clip_preprocess = clip.load(model_name, device=device)
 
-    processed_images = torch.stack([clip_preprocess(img) for img in images]).to(device)
+    processed_images = [clip_preprocess(img).unsqueeze(0).to(device) for img in images]
+    processed_images = torch.cat(processed_images, dim=0) 
 
     with torch.no_grad():
         embeddings = clip_model.encode_image(processed_images)
         embeddings /= embeddings.norm(dim=-1, keepdim=True)
-        embeddings = embeddings.cpu().numpy()
+        embeddings = embeddings.cpu().numpy().astype('float32')
 
     D, I = index.search(embeddings, top_k)
-
     similar_images = [[image_paths[i] for i in indices] for indices in I]
     return similar_images
+
+
 
 def combine_images(query_image, similar_images):
     images = [query_image] + [Image.open(img_path) for img_path in similar_images]
@@ -61,7 +63,7 @@ index, image_paths = load_faiss_index(index_path, image_paths)
 @app.post("/search/", response_class=FileResponse)
 async def search(file: UploadFile = File(...), top_k: int = 5):
     image = Image.open(file.file).convert("RGB")
-    similar_images = get_similar_images([image], index, image_paths, top_k=top_k, device='cuda')
+    similar_images = get_similar_images([image], index, image_paths, top_k=top_k, device='cpu')
     combined_image = combine_images(image, similar_images[0])
 
     # Save the combined image to a temporary file
