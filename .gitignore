@@ -1,2 +1,2 @@
-data/*
-*__pycache__
+data/COCO-128-2/*
+__pycache__/*
