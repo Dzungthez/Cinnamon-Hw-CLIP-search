@@ -10,9 +10,8 @@ RUN apt-get update && \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY . .
-
+RUN python encode_service/download_dataset.py
 
 EXPOSE 8000
 

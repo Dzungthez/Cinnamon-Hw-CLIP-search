@@ -1,5 +1,7 @@
-roboflow 
 git+https://github.com/openai/CLIP.git  
 faiss-cpu 
 torch 
 fastapi
+huggingface-hub 
+matplotlib 
+numpy 

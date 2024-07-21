@@ -28,3 +28,4 @@ dist/
 # Exclude any other temporary or unnecessary files
 *.tmp
 *.swp
+.cache 
