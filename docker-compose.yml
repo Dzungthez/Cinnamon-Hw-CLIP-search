@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile.encode
     ports:
       - "8000:8000"
+    volumes:
+      - data:/data
 
   search-service:
     build:
@@ -15,4 +17,9 @@ services:
     ports:
       - "8001:8001"
     env_file:
-      - path: .env
+      - .env
+    volumes:
+      - data:/data
+
+volumes:
+  data:

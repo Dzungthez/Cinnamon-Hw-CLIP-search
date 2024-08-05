@@ -59,6 +59,8 @@ def combine_images(query_image, similar_images):
     return combined_image
 
 index, image_paths = load_faiss_index(index_path, image_paths)
+print('hello')
+print(image_paths)
 
 @app.post("/search/", response_class=FileResponse)
 async def search(file: UploadFile = File(...), top_k: int = 5):

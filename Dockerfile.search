@@ -10,6 +10,9 @@ RUN apt-get update && \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
+# RUN python3 encode_service/download_dataset.py
+
 EXPOSE 8001
+
 
 CMD ["uvicorn", "search_service.search:app", "--host", "0.0.0.0", "--port", "8001"]
